@@ -12,8 +12,11 @@ const leadForm = document.querySelector("[data-lead-form]");
 const formStatus = document.querySelector("[data-form-status]");
 const liveClock = document.querySelector("[data-live-clock]");
 const languageButtons = document.querySelectorAll("[data-lang-switch]");
+const heroSection = document.querySelector(".hero");
 const storySection = document.querySelector("[data-story-section]");
 const useCasesSection = document.querySelector(".use-cases.section");
+const contactSection = document.querySelector("#contact");
+const stickyCta = document.querySelector(".mobile-sticky-cta");
 const premiumSurfaces = document.querySelectorAll(
   ".glass-card, .button, .demo-console, details, .timeline li, .case-card, .contact-proof div, .use-case-grid span"
 );
@@ -41,6 +44,7 @@ const translations = {
       "nav.demo": "Demo",
       "nav.contact": "Contact",
       "cta.book": "Book a consultation",
+      "sticky.cta": "Book consultation",
       "hero.eyebrow": "AI sales assistants for message-heavy businesses",
       "hero.title": "AI assistants that answer customers 24/7",
       "hero.subtitle":
@@ -323,6 +327,7 @@ const translations = {
       "nav.demo": "Демо",
       "nav.contact": "Контакты",
       "cta.book": "Получить консультацию",
+      "sticky.cta": "Получить консультацию",
       "hero.eyebrow": "AI-ассистенты продаж для бизнеса с большим потоком сообщений",
       "hero.title": "AI-ассистенты, которые отвечают клиентам 24/7",
       "hero.subtitle":
@@ -605,6 +610,7 @@ const translations = {
       "nav.demo": "Демо",
       "nav.contact": "Байланыс",
       "cta.book": "Кеңес алу",
+      "sticky.cta": "Кеңес алу",
       "hero.eyebrow": "WhatsApp, Instagram, Telegram және сайтқа арналған AI-ассистент",
       "hero.title": "Клиентке 24/7 жауап беретін AI-ассистент",
       "hero.subtitle":
@@ -1194,6 +1200,42 @@ function bindUseCaseBackgroundMotion() {
   });
 }
 
+function bindStickyCtaVisibility() {
+  if (!stickyCta || !("IntersectionObserver" in window)) return;
+
+  const muteTargets = new Map();
+  if (heroSection) muteTargets.set(heroSection, "hero");
+  if (contactSection) muteTargets.set(contactSection, "contact");
+  if (!muteTargets.size) return;
+
+  const activeReasons = new Set();
+  const updateStickyState = () => {
+    body.classList.toggle("sticky-cta-muted", activeReasons.size > 0);
+  };
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        const reason = muteTargets.get(entry.target);
+        if (!reason) return;
+
+        if (entry.isIntersecting) {
+          activeReasons.add(reason);
+        } else {
+          activeReasons.delete(reason);
+        }
+      });
+      updateStickyState();
+    },
+    {
+      rootMargin: "0px 0px -18% 0px",
+      threshold: 0.04
+    }
+  );
+
+  muteTargets.forEach((_, element) => observer.observe(element));
+}
+
 function addDemoMessage(message, index) {
   const bubble = document.createElement("article");
   const role = index % 2 === 0 ? "customer" : "ai";
@@ -1347,5 +1389,6 @@ leadForm?.addEventListener("submit", (event) => {
 bindPremiumPointerDetails();
 bindStoryCursorInteractions();
 bindUseCaseBackgroundMotion();
+bindStickyCtaVisibility();
 setLanguage(currentLanguage);
 window.setInterval(updateClock, 30000);
