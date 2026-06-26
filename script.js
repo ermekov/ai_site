@@ -6,6 +6,11 @@ const GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwHu_
 const body = document.body;
 const menuToggle = document.querySelector(".menu-toggle");
 const navMenu = document.querySelector("[data-nav-menu]");
+const navShell = document.querySelector(".nav-shell");
+const navLinks = Array.from(document.querySelectorAll(".nav-links a[href^='#']"));
+const headerConsultationCta = document.querySelector(".nav-actions .button-primary");
+const finalCtaSection = document.querySelector(".final-cta");
+const finalConsultationCta = document.querySelector(".final-panel .button-primary");
 const revealItems = document.querySelectorAll("[data-reveal]");
 const demoChat = document.querySelector("[data-demo-chat]");
 const replayButton = document.querySelector("[data-replay-demo]");
@@ -940,6 +945,168 @@ function setMenu(open) {
   menuToggle?.setAttribute("aria-label", open ? data.aria["nav.menu.close"] : data.aria["nav.menu.open"]);
 }
 
+function setActiveNavLink(sectionId) {
+  navLinks.forEach((link) => {
+    const isActive = link.hash === `#${sectionId}`;
+    link.classList.toggle("is-current", isActive);
+
+    if (isActive) {
+      link.setAttribute("aria-current", "location");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  });
+}
+
+function bindActiveNavigation() {
+  if (!navLinks.length || !("IntersectionObserver" in window)) return;
+
+  const sections = navLinks.map((link) => document.querySelector(link.hash)).filter(Boolean);
+  if (!sections.length) return;
+
+  const visibleSections = new Map();
+  const navObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          visibleSections.set(entry.target.id, entry.intersectionRatio);
+        } else {
+          visibleSections.delete(entry.target.id);
+        }
+      });
+
+      let activeId = "";
+      let activeRatio = 0;
+      visibleSections.forEach((ratio, id) => {
+        if (ratio >= activeRatio) {
+          activeId = id;
+          activeRatio = ratio;
+        }
+      });
+
+      if (activeId) {
+        setActiveNavLink(activeId);
+      }
+    },
+    {
+      rootMargin: "-34% 0px -50% 0px",
+      threshold: [0.08, 0.2, 0.35, 0.5]
+    }
+  );
+
+  sections.forEach((section) => navObserver.observe(section));
+}
+
+function bindCtaGuideSurface(surface, target, options = {}) {
+  if (!surface || !target || !("matchMedia" in window)) return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (!window.matchMedia("(min-width: 980px) and (pointer: fine)").matches) return;
+
+  const svgNamespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNamespace, "svg");
+  const guidePath = document.createElementNS(svgNamespace, "path");
+  const guideHead = document.createElementNS(svgNamespace, "path");
+  const guideDot = document.createElementNS(svgNamespace, "circle");
+  const pointer = { x: 0, y: 0 };
+  let frame = 0;
+
+  svg.classList.add("cta-guide-line");
+  if (options.variantClass) {
+    svg.classList.add(options.variantClass);
+  }
+  svg.setAttribute("aria-hidden", "true");
+  guidePath.classList.add("cta-guide-path");
+  guideHead.classList.add("cta-guide-head");
+  guideDot.classList.add("cta-guide-dot");
+  guideDot.setAttribute("r", String(options.dotRadius || 2.6));
+
+  svg.append(guidePath, guideHead, guideDot);
+  surface.prepend(svg);
+
+  const drawGuide = () => {
+    frame = 0;
+
+    const surfaceRect = surface.getBoundingClientRect();
+    const ctaRect = target.getBoundingClientRect();
+    const startX = pointer.x - surfaceRect.left;
+    const startY = pointer.y - surfaceRect.top;
+    const endX =
+      ctaRect.left -
+      surfaceRect.left +
+      Math.min(options.endOffsetMax || 34, ctaRect.width * (options.endOffsetRatio || 0.22));
+    const endY = ctaRect.top - surfaceRect.top + ctaRect.height / 2;
+    const distance = Math.hypot(endX - startX, endY - startY);
+
+    if (distance < (options.minDistance || 46)) {
+      svg.classList.remove("is-visible");
+      surface.classList.remove("is-guiding-cta");
+      return;
+    }
+
+    const curveLift = Math.min(options.curveLiftMax || 18, distance * (options.curveLiftRatio || 0.12));
+    const controlX = startX + (endX - startX) * (options.controlXRatio || 0.58);
+    const controlY = startY + (endY - startY) * (options.controlYRatio || 0.28) - curveLift;
+    const angle = Math.atan2(endY - controlY, endX - controlX);
+    const arrowSize = options.arrowSize || 7;
+
+    svg.setAttribute("viewBox", `0 0 ${surfaceRect.width} ${surfaceRect.height}`);
+    guidePath.setAttribute("d", `M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}`);
+    guideHead.setAttribute(
+      "d",
+      [
+        `M ${endX} ${endY}`,
+        `L ${endX - arrowSize * Math.cos(angle - Math.PI / 6)} ${endY - arrowSize * Math.sin(angle - Math.PI / 6)}`,
+        `M ${endX} ${endY}`,
+        `L ${endX - arrowSize * Math.cos(angle + Math.PI / 6)} ${endY - arrowSize * Math.sin(angle + Math.PI / 6)}`
+      ].join(" ")
+    );
+    guideDot.setAttribute("cx", String(startX));
+    guideDot.setAttribute("cy", String(startY));
+    svg.classList.add("is-visible");
+    surface.classList.add("is-guiding-cta");
+  };
+
+  const scheduleGuide = (event) => {
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
+
+    if (!frame) {
+      frame = window.requestAnimationFrame(drawGuide);
+    }
+  };
+
+  surface.addEventListener("pointermove", scheduleGuide);
+  surface.addEventListener("pointerleave", () => {
+    if (frame) {
+      window.cancelAnimationFrame(frame);
+      frame = 0;
+    }
+
+    svg.classList.remove("is-visible");
+    surface.classList.remove("is-guiding-cta");
+  });
+}
+
+function bindConsultationCtaGuides() {
+  bindCtaGuideSurface(navShell, headerConsultationCta, {
+    variantClass: "is-header-guide",
+    minDistance: 46
+  });
+
+  bindCtaGuideSurface(finalCtaSection, finalConsultationCta, {
+    variantClass: "is-final-guide",
+    minDistance: 74,
+    dotRadius: 3.1,
+    arrowSize: 9,
+    endOffsetRatio: 0.42,
+    endOffsetMax: 58,
+    controlXRatio: 0.58,
+    controlYRatio: 0.36,
+    curveLiftMax: 68,
+    curveLiftRatio: 0.16
+  });
+}
+
 function setLanguage(lang, options = {}) {
   if (!SUPPORTED_LANGUAGES.includes(lang)) return;
 
@@ -1458,5 +1625,7 @@ bindPremiumPointerDetails();
 bindStoryCursorInteractions();
 bindUseCaseBackgroundMotion();
 bindStickyCtaVisibility();
+bindActiveNavigation();
+bindConsultationCtaGuides();
 setLanguage(currentLanguage);
 window.setInterval(updateClock, 30000);
