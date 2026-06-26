@@ -1,6 +1,7 @@
 const DEFAULT_LANGUAGE = "ru";
 const LANGUAGE_STORAGE_KEY = "orda-ai-language";
 const SUPPORTED_LANGUAGES = ["en", "ru", "kz"];
+const GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwHu_w2Z3Du5u0uvAOwt6v5zCUCP6RQxl6P13TR7xp1h4kfENAmHd8mkMq6mbxZkCbv/exec";
 
 const body = document.body;
 const menuToggle = document.querySelector(".menu-toggle");
@@ -227,7 +228,6 @@ const translations = {
       "form.service.aiChatbot": "AI chatbot",
       "form.service.website": "Website / landing page",
       "form.service.combo": "Chatbot + website",
-      "form.service.crm": "CRM / automation integration",
       "form.service.unsure": "Not sure yet",
       "form.channel.label": "Main customer channel",
       "form.channel.placeholder": "Select a channel",
@@ -293,8 +293,10 @@ const translations = {
       "contact.telegramAria": "Book a consultation on Telegram"
     },
     status: {
-      loading: "Preparing your consultation request...",
-      success: "Consultation request captured. Connect this form to your CRM or Telegram workflow when ready."
+      loading: "Sending your request...",
+      success: "Request sent. We will review it and contact you soon.",
+      error: "Could not send the request. Please write to us on WhatsApp or Telegram.",
+      unconfigured: "The form is ready, but the Google Sheets webhook URL is not set yet."
     },
     demoMessages: [
       ["Customer", "Hi. How much is an implant consultation and do you work after 18:00?"],
@@ -509,7 +511,6 @@ const translations = {
       "form.service.aiChatbot": "AI-чатбот",
       "form.service.website": "Сайт / лендинг",
       "form.service.combo": "Чатбот + сайт",
-      "form.service.crm": "CRM / автоматизация",
       "form.service.unsure": "Пока не уверен",
       "form.channel.label": "Основной канал заявок",
       "form.channel.placeholder": "Выберите канал",
@@ -576,8 +577,10 @@ const translations = {
       "contact.telegramAria": "Получить консультацию в Telegram"
     },
     status: {
-      loading: "Готовим вашу заявку...",
-      success: "Заявка принята. Позже можно подключить эту форму к CRM или Telegram-процессу."
+      loading: "Отправляем заявку...",
+      success: "Заявка отправлена. Мы посмотрим ее и свяжемся с вами.",
+      error: "Не удалось отправить заявку. Напишите нам в WhatsApp или Telegram.",
+      unconfigured: "Форма готова, но URL Google Sheets webhook еще не указан."
     },
     demoMessages: [
       ["Клиент", "Здравствуйте. Сколько стоит консультация по имплантации и есть ли время после 18:00?"],
@@ -782,7 +785,6 @@ const translations = {
       "form.service.aiChatbot": "AI-чатбот",
       "form.service.website": "Сайт / лендинг",
       "form.service.combo": "Чатбот + сайт",
-      "form.service.crm": "CRM / автоматтандыру",
       "form.service.unsure": "Әлі нақты білмеймін",
       "form.channel.label": "Негізгі өтінім каналы",
       "form.channel.placeholder": "Каналды таңдаңыз",
@@ -848,8 +850,10 @@ const translations = {
       "contact.telegramAria": "Telegram арқылы кеңес алу"
     },
     status: {
-      loading: "Өтініміңіз дайындалып жатыр...",
-      success: "Өтінім қабылданды. Кейін бұл форманы CRM немесе Telegram процесіне қосуға болады."
+      loading: "Өтінім жіберіліп жатыр...",
+      success: "Өтінім жіберілді. Қарап шығып, сізбен байланысамыз.",
+      error: "Өтінім жіберілмеді. WhatsApp немесе Telegram арқылы жазыңыз.",
+      unconfigured: "Форма дайын, бірақ Google Sheets webhook URL әлі қойылмаған."
     },
     demoMessages: [
       ["Клиент", "Сәлеметсіз бе. Имплантация бойынша кеңес қанша тұрады және 18:00-ден кейін уақыт бар ма?"],
@@ -1268,6 +1272,55 @@ function getFormValue(selector) {
     : "";
 }
 
+function getSelectedLabel(selector) {
+  const element = leadForm?.querySelector(selector);
+
+  if (!(element instanceof HTMLSelectElement)) return getFormValue(selector);
+
+  return element.selectedOptions[0]?.textContent?.trim() || element.value;
+}
+
+function getLeadPayload() {
+  return {
+    submitted_at: new Date().toISOString(),
+    language: currentLanguage,
+    name: getFormValue("#name"),
+    company: getFormValue("#company"),
+    business_type: getFormValue("#business-type"),
+    service: getSelectedLabel("#service"),
+    service_value: getFormValue("#service"),
+    channel: getSelectedLabel("#channel"),
+    channel_value: getFormValue("#channel"),
+    message_volume: getSelectedLabel("#messages"),
+    message_volume_value: getFormValue("#messages"),
+    preferred_contact: getSelectedLabel("#preferred-contact"),
+    preferred_contact_value: getFormValue("#preferred-contact"),
+    contact: getFormValue("#contact-method"),
+    goal: getFormValue("#goal"),
+    page_url: window.location.href,
+    user_agent: navigator.userAgent
+  };
+}
+
+async function sendLeadToGoogleSheets(payload) {
+  const endpoint = GOOGLE_SHEETS_WEBHOOK_URL.trim();
+
+  if (!endpoint || endpoint.includes("PASTE_")) {
+    throw new Error("missing_google_sheets_webhook_url");
+  }
+
+  const body = new URLSearchParams();
+  Object.entries(payload).forEach(([key, value]) => {
+    body.append(key, value ?? "");
+  });
+
+  await fetch(endpoint, {
+    method: "POST",
+    mode: "no-cors",
+    body
+  });
+}
+
 function updateClock() {
   if (!liveClock) return;
 
@@ -1357,7 +1410,7 @@ if ("IntersectionObserver" in window) {
   revealItems.forEach((item) => item.classList.add("is-visible"));
 }
 
-leadForm?.addEventListener("submit", (event) => {
+leadForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const submitButton = leadForm.querySelector("button[type='submit']");
@@ -1368,22 +1421,37 @@ leadForm?.addEventListener("submit", (event) => {
     formStatus.textContent = status.loading;
   }
 
-  window.setTimeout(() => {
+  const payload = getLeadPayload();
+
+  try {
+    await sendLeadToGoogleSheets(payload);
+
     if (formStatus) {
       formStatus.textContent = status.success;
     }
 
     trackEvent("form_submit_success", {
-      service: getFormValue("#service"),
-      businessTypeProvided: Boolean(getFormValue("#business-type")),
-      channel: getFormValue("#channel"),
-      messageVolume: getFormValue("#messages"),
-      preferredContact: getFormValue("#preferred-contact")
+      service: payload.service_value,
+      businessTypeProvided: Boolean(payload.business_type),
+      channel: payload.channel_value,
+      messageVolume: payload.message_volume_value,
+      preferredContact: payload.preferred_contact_value
     });
 
-    submitButton?.removeAttribute("disabled");
     leadForm.reset();
-  }, 700);
+  } catch (error) {
+    const isMissingEndpoint = error instanceof Error && error.message === "missing_google_sheets_webhook_url";
+
+    if (formStatus) {
+      formStatus.textContent = isMissingEndpoint ? status.unconfigured : status.error;
+    }
+
+    trackEvent("form_submit_error", {
+      reason: isMissingEndpoint ? "missing_google_sheets_webhook_url" : "network_or_webhook_error"
+    });
+  } finally {
+    submitButton?.removeAttribute("disabled");
+  }
 });
 
 bindPremiumPointerDetails();
